@@ -1,5 +1,5 @@
-use std::ops::Neg;
 use std::boxed::Box;
+use std::ops::Neg;
 
 use glam::DVec3;
 use image::{ImageBuffer, Rgb, RgbImage};
@@ -29,7 +29,10 @@ struct Threshold {
 
 impl Threshold {
     fn with_max(&self, new_max: f64) -> Threshold {
-        Threshold { min: self.min, max: new_max }
+        Threshold {
+            min: self.min,
+            max: new_max,
+        }
     }
 }
 
@@ -38,12 +41,7 @@ trait Hittable {
 }
 
 impl HitRecord {
-    fn new(
-        point: &Point3,
-        outward_normal: &Vec3,
-        ray: &Ray,
-        t: f64,
-    ) -> HitRecord {
+    fn new(point: &Point3, outward_normal: &Vec3, ray: &Ray, t: f64) -> HitRecord {
         let front_face = ray.direction.dot(*outward_normal) < 0.0;
         let normal = if front_face {
             outward_normal.to_owned()
@@ -104,12 +102,7 @@ impl Hittable for Sphere {
         let point = ray.at(root);
         let outward_normal = (point - self.center) / self.radius;
 
-        return Some(HitRecord::new(
-            &point,
-            &outward_normal,
-            ray,
-            root,
-        ));
+        return Some(HitRecord::new(&point, &outward_normal, ray, root));
     }
 }
 
@@ -119,9 +112,7 @@ struct HittableList {
 
 impl HittableList {
     fn new() -> HittableList {
-        HittableList {
-            objects: vec![],
-        }
+        HittableList { objects: vec![] }
     }
 
     fn add(&mut self, hittable: Box<dyn Hittable>) {
@@ -130,7 +121,6 @@ impl HittableList {
 }
 
 impl Hittable for HittableList {
-
     fn try_collect_hit_from(&self, ray: &Ray, threshold: &Threshold) -> Option<HitRecord> {
         let mut closest_hit: Option<HitRecord> = None;
         let mut narrowing_threshold = threshold.clone();
@@ -144,7 +134,6 @@ impl Hittable for HittableList {
 
         return closest_hit;
     }
-
 }
 
 struct Ray {
@@ -195,39 +184,105 @@ fn vec_to_image_color(color_vec: &ColorVec) -> Color {
     )
 }
 
-fn main() {
-    // Image
-    let aspect_ratio: f64 = 16.0 / 9.0;
-    let image_width: u32 = 400;
-    let image_height: u32 = (image_width as f64 / aspect_ratio) as u32;
+struct Camera {
+    // aspect_ratio: f64,
+    // viewport_height: f64,
+    // viewport_width: f64,
+    // focal_length: f64,
+    origin: Point3,
+    horizontal: Vec3,
+    vertical: Vec3,
+    lower_left_corner: Vec3,
+}
 
-    // Camera
-    let viewport_height = 2.0;
-    let viewport_width = aspect_ratio * viewport_height;
-    let focal_length = 1.0;
+impl Camera {
+    fn new(aspect_ratio: f64) -> Camera {
+        let viewport_height = 2.0;
+        let viewport_width = aspect_ratio * viewport_height;
+        let focal_length = 1.0;
+        let origin = Point3::new(0.0, 0.0, 0.0);
+        let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
+        let vertical = Vec3::new(0.0, viewport_height, 0.0);
+        let lower_left_corner =
+            origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+        Camera {
+            // aspect_ratio,
+            // viewport_height,
+            // viewport_width,
+            // focal_length,
+            origin,
+            horizontal,
+            vertical,
+            lower_left_corner,
+        }
+    }
 
-    let origin = Point3::new(0.0, 0.0, 0.0);
-    let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
-    let vertical = Vec3::new(0.0, viewport_height, 0.0);
-    let lower_left_corner =
-        origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+    fn get_ray(&self, u: f64, v: f64) -> Ray {
+        let direction: Vec3 =
+            self.lower_left_corner + u * self.horizontal + v * self.vertical + self.origin;
+        Ray::new(&self.origin, &direction)
+    }
+}
 
-    let mut image: RgbImage = ImageBuffer::new(image_width, image_height);
-    let progress = ProgressBar::new((image_width * image_height) as u64);
+struct ImageSpec {
+    width: u32,
+    height: u32,
+    aspect_ratio: f64,
+}
 
+impl ImageSpec {
+    fn from_aspect_ratio(width: u32, aspect_ratio: f64) -> ImageSpec {
+        let height: u32 = (width as f64 / aspect_ratio) as u32;
+        ImageSpec {
+            width,
+            height,
+            aspect_ratio,
+        }
+    }
+
+    fn pixel_count(&self) -> u32 {
+        self.width * self.height
+    }
+}
+
+fn calculate_pixel(
+    x: u32,
+    y: u32,
+    image: &ImageSpec,
+    camera: &Camera,
+    world: &dyn Hittable,
+) -> Rgb<u8> {
+    let u = x as f64 / image.width as f64;
+    // Flip top and bottom, as guide's x=0 is bottom, but our's is top.
+    let v = 1.0 - y as f64 / image.height as f64;
+
+    let ray = camera.get_ray(u, v);
+    let color_vec = ray_color(&ray, world);
+    return vec_to_image_color(&color_vec);
+}
+
+fn create_world() -> impl Hittable {
     let mut world = HittableList::new();
     world.add(Box::new(Sphere::new(&Point3::new(0.0, 0.0, -1.0), 0.5)));
-    world.add(Box::new(Sphere::new(&Point3::new(0.0, -100.5, -1.0), 100.0)));
+    world.add(Box::new(Sphere::new(
+        &Point3::new(0.0, -100.5, -1.0),
+        100.0,
+    )));
+
+    return world;
+}
+
+fn main() {
+    let image_spec = ImageSpec::from_aspect_ratio(400, 16.0 / 9.0);
+
+    let mut image: RgbImage = ImageBuffer::new(image_spec.width, image_spec.height);
+    let progress = ProgressBar::new(image_spec.pixel_count() as u64);
+
+    let world = create_world();
+    let camera = Camera::new(image_spec.aspect_ratio);
 
     for (x, y, pixel) in image.enumerate_pixels_mut() {
-        let u = x as f64 / image_width as f64;
-        // Flip top and bottom, as guide's x=0 is bottom, but our's is top.
-        let v = 1.0 - y as f64 / image_height as f64;
-
-        let direction = lower_left_corner + u * horizontal + v * vertical - origin;
-        let ray = Ray::new(&origin, &direction);
-        let color_vec = ray_color(&ray, &world);
-        *pixel = vec_to_image_color(&color_vec);
+        *pixel = calculate_pixel(x, y, &image_spec, &camera, &world);
         progress.inc(1);
     }
 
