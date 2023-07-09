@@ -1,4 +1,5 @@
 use std::ops::Neg;
+use std::boxed::Box;
 
 use glam::DVec3;
 use image::{ImageBuffer, Rgb, RgbImage};
@@ -20,9 +21,16 @@ struct HitRecord {
     front_face: bool,
 }
 
+#[derive(Clone, Copy)]
 struct Threshold {
     min: f64,
     max: f64,
+}
+
+impl Threshold {
+    fn with_max(&self, new_max: f64) -> Threshold {
+        Threshold { min: self.min, max: new_max }
+    }
 }
 
 trait Hittable {
@@ -103,6 +111,28 @@ impl Hittable for Sphere {
             root,
         ));
     }
+}
+
+struct HittableList {
+    objects: Vec<Box<dyn Hittable>>,
+}
+
+impl Hittable for HittableList {
+
+    fn try_collect_hit_from(&self, ray: &Ray, threshold: &Threshold) -> Option<HitRecord> {
+        let mut closest_hit: Option<HitRecord> = None;
+        let mut narrowing_threshold = threshold.clone();
+
+        for obj in &self.objects {
+            if let Some(hit) = obj.try_collect_hit_from(ray, &narrowing_threshold) {
+                narrowing_threshold = narrowing_threshold.with_max(hit.t);
+                closest_hit = Some(hit);
+            }
+        }
+
+        return closest_hit;
+    }
+
 }
 
 struct Ray {
