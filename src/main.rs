@@ -117,6 +117,18 @@ struct HittableList {
     objects: Vec<Box<dyn Hittable>>,
 }
 
+impl HittableList {
+    fn new() -> HittableList {
+        HittableList {
+            objects: vec![],
+        }
+    }
+
+    fn add(&mut self, hittable: Box<dyn Hittable>) {
+        self.objects.push(hittable);
+    }
+}
+
 impl Hittable for HittableList {
 
     fn try_collect_hit_from(&self, ray: &Ray, threshold: &Threshold) -> Option<HitRecord> {
@@ -153,10 +165,14 @@ impl Ray {
     }
 }
 
-fn ray_color(ray: &Ray, hittable: &dyn Hittable, threshold: &Threshold) -> ColorVec {
-    if let Some(hit) = hittable.try_collect_hit_from(ray, threshold) {
-        let N = (ray.at(hit.t) - Vec3::new(0.0, 0.0, -1.0)).normalize();
-        return 0.5 * (N + 1.0);
+fn ray_color(ray: &Ray, hittable: &dyn Hittable) -> ColorVec {
+    let base_threshold = Threshold {
+        min: 0.0,
+        max: f64::INFINITY,
+    };
+
+    if let Some(hit) = hittable.try_collect_hit_from(ray, &base_threshold) {
+        return 0.5 * (hit.normal + ColorVec::new(1.0, 1.0, 1.0));
     }
 
     let unit_direction = ray.direction.normalize();
@@ -199,19 +215,16 @@ fn main() {
     let mut image: RgbImage = ImageBuffer::new(image_width, image_height);
     let progress = ProgressBar::new((image_width * image_height) as u64);
 
-    let sphere = Sphere::new(&Point3::new(0.0, 0.0, -1.0), 0.5);
-    // TODO: What should these be?
-    let threshold = Threshold {
-        min: 0.0,
-        max: 1.0,
-    };
+    let mut world = HittableList::new();
+    world.add(Box::new(Sphere::new(&Point3::new(0.0, 0.0, -1.0), 0.5)));
+    world.add(Box::new(Sphere::new(&Point3::new(0.0, -100.5, -1.0), 100.0)));
 
     for (x, y, pixel) in image.enumerate_pixels_mut() {
         let u = x as f64 / image_width as f64;
         let v = y as f64 / image_height as f64;
         let direction = lower_left_corner + u * horizontal + v * vertical - origin;
         let ray = Ray::new(&origin, &direction);
-        let color_vec = ray_color(&ray, &sphere, &threshold);
+        let color_vec = ray_color(&ray, &world);
         *pixel = vec_to_image_color(&color_vec);
         progress.inc(1);
     }
