@@ -1,3 +1,5 @@
+use std::ops::Neg;
+
 use glam::DVec3;
 use image::{ImageBuffer, Rgb, RgbImage};
 use indicatif::ProgressBar;
@@ -15,6 +17,7 @@ struct HitRecord {
     point: Point3,
     normal: Vec3,
     t: f64,
+    front_face: bool,
 }
 
 struct Threshold {
@@ -27,11 +30,24 @@ trait Hittable {
 }
 
 impl HitRecord {
-    fn new(point: &Point3, normal: &Vec3, t: f64) -> HitRecord {
+    fn new(
+        point: &Point3,
+        outward_normal: &Vec3,
+        ray: &Ray,
+        t: f64,
+    ) -> HitRecord {
+        let front_face = ray.direction.dot(*outward_normal) < 0.0;
+        let normal = if front_face {
+            outward_normal.to_owned()
+        } else {
+            outward_normal.neg()
+        };
+
         HitRecord {
             point: *point,
-            normal: *normal,
+            normal,
             t,
+            front_face,
         }
     }
 }
@@ -78,11 +94,12 @@ impl Hittable for Sphere {
         }
 
         let point = ray.at(root);
-        let normal = (point - self.center) / self.radius;
+        let outward_normal = (point - self.center) / self.radius;
 
         return Some(HitRecord::new(
             &point,
-            &normal,
+            &outward_normal,
+            ray,
             root,
         ));
     }
