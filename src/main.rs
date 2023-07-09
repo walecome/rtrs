@@ -221,7 +221,9 @@ fn main() {
 
     for (x, y, pixel) in image.enumerate_pixels_mut() {
         let u = x as f64 / image_width as f64;
-        let v = y as f64 / image_height as f64;
+        // Flip top and bottom, as guide's x=0 is bottom, but our's is top.
+        let v = 1.0 - y as f64 / image_height as f64;
+
         let direction = lower_left_corner + u * horizontal + v * vertical - origin;
         let ray = Ray::new(&origin, &direction);
         let color_vec = ray_color(&ray, &world);
