@@ -42,26 +42,29 @@ impl Ray {
         }
     }
 
-    fn at(self, t: f64) -> Point3 {
+    fn at(&self, t: f64) -> Point3 {
         self.origin + t * self.direction
     }
 
-    fn hit_sphere(&self, sphere: &Sphere) -> bool {
+    fn hit_sphere(&self, sphere: &Sphere) -> Option<f64> {
         let oc = self.origin - sphere.center;
         let a = self.direction.dot(self.direction);
         let b = 2.0 * oc.dot(self.direction);
         let c = oc.dot(oc) - sphere.box_area();
         let discriminant = b * b - 4.0 * a * c;
 
-        return discriminant > 0.0;
+        if discriminant < 0.0 {
+            return None;
+        }
+        return Some((-b - discriminant.sqrt()) / (2.0 * a));
     }
 }
 
 fn ray_color(ray: &Ray) -> ColorVec {
     let sphere = Sphere::new(&Point3::new(0.0, 0.0, -1.0), 0.5);
-    if ray.hit_sphere(&sphere) {
-        // Red sphere
-        return ColorVec::new(1.0, 0.0, 0.0);
+    if let Some(t) = ray.hit_sphere(&sphere) {
+        let N = (ray.at(t) - Vec3::new(0.0, 0.0, -1.0)).normalize();
+        return 0.5 * (N + 1.0);
     }
 
     let unit_direction = ray.direction.normalize();
