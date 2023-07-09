@@ -1,5 +1,6 @@
 use std::boxed::Box;
 use std::ops::Neg;
+use rand::{Rng, rngs::ThreadRng};
 
 use glam::DVec3;
 use image::{ImageBuffer, Rgb, RgbImage};
@@ -152,6 +153,10 @@ impl Ray {
     fn at(&self, t: f64) -> Point3 {
         self.origin + t * self.direction
     }
+
+    fn resolve_color(&self, hittable: &dyn Hittable) -> ColorVec {
+        ray_color(self, hittable)
+    }
 }
 
 fn ray_color(ray: &Ray, hittable: &dyn Hittable) -> ColorVec {
@@ -245,22 +250,6 @@ impl ImageSpec {
     }
 }
 
-fn calculate_pixel(
-    x: u32,
-    y: u32,
-    image: &ImageSpec,
-    camera: &Camera,
-    world: &dyn Hittable,
-) -> Rgb<u8> {
-    let u = x as f64 / image.width as f64;
-    // Flip top and bottom, as guide's x=0 is bottom, but our's is top.
-    let v = 1.0 - y as f64 / image.height as f64;
-
-    let ray = camera.get_ray(u, v);
-    let color_vec = ray_color(&ray, world);
-    return vec_to_image_color(&color_vec);
-}
-
 fn create_world() -> impl Hittable {
     let mut world = HittableList::new();
     world.add(Box::new(Sphere::new(&Point3::new(0.0, 0.0, -1.0), 0.5)));
@@ -272,8 +261,14 @@ fn create_world() -> impl Hittable {
     return world;
 }
 
+fn normalize_coord_with_noise(val: u32, bound: u32, rng: &mut ThreadRng) -> f64 {
+    let noise = rng.gen::<f64>();
+    ((val as f64) + noise) / bound as f64
+}
+
 fn main() {
     let image_spec = ImageSpec::from_aspect_ratio(400, 16.0 / 9.0);
+    let samples_per_pixel = 10;
 
     let mut image: RgbImage = ImageBuffer::new(image_spec.width, image_spec.height);
     let progress = ProgressBar::new(image_spec.pixel_count() as u64);
@@ -281,8 +276,23 @@ fn main() {
     let world = create_world();
     let camera = Camera::new(image_spec.aspect_ratio);
 
+    let sample_scale = 1.0 / (samples_per_pixel as f64);
+
+    let mut rng = rand::thread_rng();
+
     for (x, y, pixel) in image.enumerate_pixels_mut() {
-        *pixel = calculate_pixel(x, y, &image_spec, &camera, &world);
+        let mut final_color = ColorVec::ZERO;
+
+        for _ in 0..samples_per_pixel {
+            let u = normalize_coord_with_noise(x, image_spec.width, &mut rng);
+            // Flip top and bottom, as guide's x=0 is bottom, but our's is top.
+            let v = 1.0 - normalize_coord_with_noise(y, image_spec.height, &mut rng);
+            let color = camera.get_ray(u, v).resolve_color(&world);
+
+            final_color += color * sample_scale;
+        }
+
+        *pixel = vec_to_image_color(&final_color);
         progress.inc(1);
     }
 
