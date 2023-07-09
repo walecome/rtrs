@@ -11,6 +11,31 @@ type ColorVec = DVec3;
 type Vec3 = DVec3;
 type Point3 = DVec3;
 
+struct HitRecord {
+    point: Point3,
+    normal: Vec3,
+    t: f64,
+}
+
+struct Threshold {
+    min: f64,
+    max: f64,
+}
+
+trait Hittable {
+    fn try_collect_hit_from(&self, ray: &Ray, threshold: &Threshold) -> Option<HitRecord>;
+}
+
+impl HitRecord {
+    fn new(point: &Point3, normal: &Vec3, t: f64) -> HitRecord {
+        HitRecord {
+            point: *point,
+            normal: *normal,
+            t,
+        }
+    }
+}
+
 struct Sphere {
     center: Point3,
     radius: f64,
@@ -26,6 +51,40 @@ impl Sphere {
 
     fn box_area(&self) -> f64 {
         self.radius * self.radius
+    }
+}
+
+impl Hittable for Sphere {
+    fn try_collect_hit_from(&self, ray: &Ray, threshold: &Threshold) -> Option<HitRecord> {
+        let oc = ray.origin - self.center;
+        let a = ray.direction.length_squared();
+        let half_b = oc.dot(ray.direction);
+        let c = oc.length_squared() - self.box_area();
+        let discriminant = half_b * half_b - a * c;
+
+        if discriminant < 0.0 {
+            return None;
+        }
+
+        let sqrtd = discriminant.sqrt();
+
+        // Find the nearest root that lies in the acceptable range.
+        let mut root = (-half_b - sqrtd) / a;
+        if root < threshold.min || threshold.max < root {
+            root = (-half_b + sqrtd) / a;
+            if root < threshold.min || threshold.max < root {
+                return None;
+            }
+        }
+
+        let point = ray.at(root);
+        let normal = (point - self.center) / self.radius;
+
+        return Some(HitRecord::new(
+            &point,
+            &normal,
+            root,
+        ));
     }
 }
 
@@ -45,25 +104,11 @@ impl Ray {
     fn at(&self, t: f64) -> Point3 {
         self.origin + t * self.direction
     }
-
-    fn hit_sphere(&self, sphere: &Sphere) -> Option<f64> {
-        let oc = self.origin - sphere.center;
-        let a = self.direction.length_squared();
-        let half_b = oc.dot(self.direction);
-        let c = oc.length_squared() - sphere.box_area();
-        let discriminant = half_b * half_b - a * c;
-
-        if discriminant < 0.0 {
-            return None;
-        }
-        return Some((-half_b - discriminant.sqrt()) / a);
-    }
 }
 
-fn ray_color(ray: &Ray) -> ColorVec {
-    let sphere = Sphere::new(&Point3::new(0.0, 0.0, -1.0), 0.5);
-    if let Some(t) = ray.hit_sphere(&sphere) {
-        let N = (ray.at(t) - Vec3::new(0.0, 0.0, -1.0)).normalize();
+fn ray_color(ray: &Ray, hittable: &dyn Hittable, threshold: &Threshold) -> ColorVec {
+    if let Some(hit) = hittable.try_collect_hit_from(ray, threshold) {
+        let N = (ray.at(hit.t) - Vec3::new(0.0, 0.0, -1.0)).normalize();
         return 0.5 * (N + 1.0);
     }
 
@@ -107,12 +152,19 @@ fn main() {
     let mut image: RgbImage = ImageBuffer::new(image_width, image_height);
     let progress = ProgressBar::new((image_width * image_height) as u64);
 
+    let sphere = Sphere::new(&Point3::new(0.0, 0.0, -1.0), 0.5);
+    // TODO: What should these be?
+    let threshold = Threshold {
+        min: 0.0,
+        max: 1.0,
+    };
+
     for (x, y, pixel) in image.enumerate_pixels_mut() {
         let u = x as f64 / image_width as f64;
         let v = y as f64 / image_height as f64;
         let direction = lower_left_corner + u * horizontal + v * vertical - origin;
         let ray = Ray::new(&origin, &direction);
-        let color_vec = ray_color(&ray);
+        let color_vec = ray_color(&ray, &sphere, &threshold);
         *pixel = vec_to_image_color(&color_vec);
         progress.inc(1);
     }
