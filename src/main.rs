@@ -1,26 +1,82 @@
+use glam::DVec3;
 use image::{ImageBuffer, Rgb, RgbImage};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 
-fn get_pixel_color(x: u32, y: u32, image_width: u32, image_height: u32) -> Rgb<u8> {
-    let pct_x = x as f32 / image_width as f32;
-    let r = (0xFF as f32 * pct_x) as u8;
+fn rgb(r: u8, g: u8, b: u8) -> Rgb<u8> {
+    Rgb([r, g, b])
+}
 
-    let pct_y = y as f32 / image_height as f32;
-    let g = (0xFF as f32 * pct_y) as u8;
+type Color = Rgb<u8>;
+type ColorVec = DVec3;
+type Vec3 = DVec3;
+type Point3 = DVec3;
 
-    return Rgb([r, g, 0xFF / 4]);
+struct Ray {
+    origin: Point3,
+    direction: Vec3,
+}
+
+impl Ray {
+    fn new(origin: &Point3, direction: &Vec3) -> Ray {
+        Ray {
+            origin: *origin,
+            direction: *direction,
+        }
+    }
+
+    fn at(self, t: f64) -> Point3 {
+        self.origin + t * self.direction
+    }
+}
+
+fn ray_color(ray: &Ray) -> ColorVec {
+    let unit_direction = ray.direction.normalize();
+    let t = 0.5 * (unit_direction.y + 1.0);
+    return (1.0 - t) * ColorVec::new(1.0, 1.0, 1.0) + t * ColorVec::new(0.5, 0.7, 1.0);
+}
+
+fn double_to_color(val: f64) -> u8 {
+    assert!(val >= 0.0);
+    let scaled: u32 = (val * 255.999) as u32;
+    assert!(scaled < 256, "scaled={}, val={}", scaled, val);
+    return scaled as u8;
+}
+
+fn vec_to_image_color(color_vec: &ColorVec) -> Color {
+    rgb(
+        double_to_color(color_vec.x),
+        double_to_color(color_vec.y),
+        double_to_color(color_vec.z),
+    )
 }
 
 fn main() {
-    let image_width: u32 = 256;
-    let image_height: u32 = 256;
+    // Image
+    let aspect_ratio: f64 = 16.0 / 9.0;
+    let image_width: u32 = 400;
+    let image_height: u32 = (image_width as f64 / aspect_ratio) as u32;
+
+    // Camera
+    let viewport_height = 2.0;
+    let viewport_width = aspect_ratio * viewport_height;
+    let focal_length = 1.0;
+
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
+    let vertical = Vec3::new(0.0, viewport_height, 0.0);
+    let lower_left_corner =
+        origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
 
     let mut image: RgbImage = ImageBuffer::new(image_width, image_height);
-
     let progress = ProgressBar::new((image_width * image_height) as u64);
 
     for (x, y, pixel) in image.enumerate_pixels_mut() {
-        *pixel = get_pixel_color(x, y, image_width, image_height);
+        let u = x as f64 / image_width as f64;
+        let v = y as f64 / image_height as f64;
+        let direction = lower_left_corner + u * horizontal + v * vertical - origin;
+        let ray = Ray::new(&origin, &direction);
+        let color_vec = ray_color(&ray);
+        *pixel = vec_to_image_color(&color_vec);
         progress.inc(1);
     }
 
