@@ -170,6 +170,7 @@ fn ray_color(ray: &Ray, hittable: &dyn Hittable, random: &mut Random, depth: u32
     };
 
     if let Some(hit) = hittable.try_collect_hit_from(ray, &base_threshold) {
+        // TODO: Something is off, our image gets a lot darker than the reference one...
         let target = hit.point + hit.normal + random_unit_sphere(random);
         let new_ray = Ray::new(&hit.point, &(target - hit.point));
         return 0.5 * ray_color(&new_ray, hittable, random, depth - 1);
