@@ -1,10 +1,11 @@
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::boxed::Box;
 use std::ops::Neg;
-use rand::{Rng, rngs::ThreadRng};
 
 use glam::DVec3;
 use image::{ImageBuffer, Rgb, RgbImage};
-use indicatif::ProgressBar;
+use indicatif::ParallelProgressIterator;
+use rayon::prelude::*;
 
 fn rgb(r: u8, g: u8, b: u8) -> Rgb<u8> {
     Rgb([r, g, b])
@@ -19,7 +20,25 @@ struct HitRecord {
     point: Point3,
     normal: Vec3,
     t: f64,
-    front_face: bool,
+    // front_face: bool,
+}
+
+impl HitRecord {
+    fn new(point: &Point3, outward_normal: &Vec3, ray: &Ray, t: f64) -> HitRecord {
+        let front_face = ray.direction.dot(*outward_normal) < 0.0;
+        let normal = if front_face {
+            outward_normal.to_owned()
+        } else {
+            outward_normal.neg()
+        };
+
+        HitRecord {
+            point: *point,
+            normal,
+            t,
+            // front_face,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -39,24 +58,6 @@ impl Threshold {
 
 trait Hittable {
     fn try_collect_hit_from(&self, ray: &Ray, threshold: &Threshold) -> Option<HitRecord>;
-}
-
-impl HitRecord {
-    fn new(point: &Point3, outward_normal: &Vec3, ray: &Ray, t: f64) -> HitRecord {
-        let front_face = ray.direction.dot(*outward_normal) < 0.0;
-        let normal = if front_face {
-            outward_normal.to_owned()
-        } else {
-            outward_normal.neg()
-        };
-
-        HitRecord {
-            point: *point,
-            normal,
-            t,
-            front_face,
-        }
-    }
 }
 
 struct Sphere {
@@ -108,7 +109,7 @@ impl Hittable for Sphere {
 }
 
 struct HittableList {
-    objects: Vec<Box<dyn Hittable>>,
+    objects: Vec<Box<dyn Hittable + Sync>>,
 }
 
 impl HittableList {
@@ -116,7 +117,7 @@ impl HittableList {
         HittableList { objects: vec![] }
     }
 
-    fn add(&mut self, hittable: Box<dyn Hittable>) {
+    fn add(&mut self, hittable: Box<dyn Hittable + Sync>) {
         self.objects.push(hittable);
     }
 }
@@ -267,13 +268,13 @@ fn create_world() -> impl Hittable {
 }
 
 struct Random {
-    rng: ThreadRng,
+    rng: SmallRng,
 }
 
 impl Random {
     fn new() -> Random {
         Random {
-            rng: rand::thread_rng(),
+            rng: SmallRng::from_entropy(),
         }
     }
 
@@ -286,7 +287,6 @@ impl Random {
     }
 }
 
-
 fn normalize_coord_with_noise(val: u32, bound: u32, random: &mut Random) -> f64 {
     let noise = random.random_f64(0.0, 1.0);
     ((val as f64) + noise) / bound as f64
@@ -297,49 +297,82 @@ fn normalize_coord_with_noise(val: u32, bound: u32, random: &mut Random) -> f64 
 // }
 
 fn random_vec_bounded(random: &mut Random, min: f64, max: f64) -> Vec3 {
-    Vec3::new(random.random_f64(min, max), random.random_f64(min, max), random.random_f64(min, max))
+    Vec3::new(
+        random.random_f64(min, max),
+        random.random_f64(min, max),
+        random.random_f64(min, max),
+    )
 }
 
 fn random_unit_sphere(random: &mut Random) -> Vec3 {
     return loop {
         let vec = random_vec_bounded(random, -1.0, 1.0);
         if vec.length_squared() < 1.0 {
-            break vec
+            break vec;
         }
+    };
+}
+
+fn compute_pixel(
+    x: u32,
+    y: u32,
+    samples_per_pixel: u32,
+    image_spec: &ImageSpec,
+    camera: &Camera,
+    world: &dyn Hittable,
+    max_depth: u32,
+) -> ColorVec {
+    let mut final_color = ColorVec::ZERO;
+    let sample_scale = 1.0 / (samples_per_pixel as f64);
+    let mut random = Random::new();
+
+    for _ in 0..samples_per_pixel {
+        let u = normalize_coord_with_noise(x, image_spec.width, &mut random);
+        // Flip top and bottom, as guide's x=0 is bottom, but our's is top.
+        let v = 1.0 - normalize_coord_with_noise(y, image_spec.height, &mut random);
+        let color = camera
+            .get_ray(u, v)
+            .resolve_color(world, &mut random, max_depth);
+
+        final_color += color * sample_scale;
     }
+
+    return final_color;
 }
 
 fn main() {
     let image_spec = ImageSpec::from_aspect_ratio(400, 16.0 / 9.0);
-    let samples_per_pixel = 10;
-
-    let mut image: RgbImage = ImageBuffer::new(image_spec.width, image_spec.height);
-    let progress = ProgressBar::new(image_spec.pixel_count() as u64);
+    let samples_per_pixel = 100;
 
     let world = create_world();
     let camera = Camera::new(image_spec.aspect_ratio);
 
-    let sample_scale = 1.0 / (samples_per_pixel as f64);
-
-    let mut random = Random::new();
-
     let max_depth = 50;
 
-    for (x, y, pixel) in image.enumerate_pixels_mut() {
-        let mut final_color = ColorVec::ZERO;
+    let result = (0..image_spec.pixel_count())
+        .into_par_iter()
+        .progress_count(image_spec.pixel_count() as u64)
+        .map(|i| {
+            let x = i % image_spec.width;
+            let y = i / image_spec.width;
+            let color_vec = compute_pixel(
+                x,
+                y,
+                samples_per_pixel,
+                &image_spec,
+                &camera,
+                &world,
+                max_depth,
+            );
+            (x, y, vec_to_image_color(&color_vec))
+        })
+        .collect::<Vec<_>>();
 
-        for _ in 0..samples_per_pixel {
-            let u = normalize_coord_with_noise(x, image_spec.width, &mut random);
-            // Flip top and bottom, as guide's x=0 is bottom, but our's is top.
-            let v = 1.0 - normalize_coord_with_noise(y, image_spec.height, &mut random);
-            let color = camera.get_ray(u, v).resolve_color(&world, &mut random, max_depth);
-
-            final_color += color * sample_scale;
-        }
-
-        *pixel = vec_to_image_color(&final_color);
-        progress.inc(1);
-    }
+    let mut image: RgbImage = ImageBuffer::new(image_spec.width, image_spec.height);
+    result.iter().for_each(|info| {
+        let (x, y, color) = *info;
+        image.put_pixel(x, y, color);
+    });
 
     image.save("/tmp/image.png").unwrap();
 }
