@@ -154,19 +154,24 @@ impl Ray {
         self.origin + t * self.direction
     }
 
-    fn resolve_color(&self, hittable: &dyn Hittable) -> ColorVec {
-        ray_color(self, hittable)
+    fn resolve_color(&self, hittable: &dyn Hittable, random: &mut Random, depth: u32) -> ColorVec {
+        ray_color(self, hittable, random, depth)
     }
 }
 
-fn ray_color(ray: &Ray, hittable: &dyn Hittable) -> ColorVec {
+fn ray_color(ray: &Ray, hittable: &dyn Hittable, random: &mut Random, depth: u32) -> ColorVec {
+    if depth == 0 {
+        return ColorVec::ZERO;
+    }
     let base_threshold = Threshold {
         min: 0.0,
         max: f64::INFINITY,
     };
 
     if let Some(hit) = hittable.try_collect_hit_from(ray, &base_threshold) {
-        return 0.5 * (hit.normal + ColorVec::new(1.0, 1.0, 1.0));
+        let target = hit.point + hit.normal + random_unit_sphere(random);
+        let new_ray = Ray::new(&hit.point, &(target - hit.point));
+        return 0.5 * ray_color(&new_ray, hittable, random, depth - 1);
     }
 
     let unit_direction = ray.direction.normalize();
@@ -261,9 +266,47 @@ fn create_world() -> impl Hittable {
     return world;
 }
 
-fn normalize_coord_with_noise(val: u32, bound: u32, rng: &mut ThreadRng) -> f64 {
-    let noise = rng.gen::<f64>();
+struct Random {
+    rng: ThreadRng,
+}
+
+impl Random {
+    fn new() -> Random {
+        Random {
+            rng: rand::thread_rng(),
+        }
+    }
+
+    fn random_normalized(&mut self) -> f64 {
+        self.rng.gen::<f64>()
+    }
+
+    fn random_f64(&mut self, min: f64, max: f64) -> f64 {
+        min + (max - min) * self.random_normalized()
+    }
+}
+
+
+fn normalize_coord_with_noise(val: u32, bound: u32, random: &mut Random) -> f64 {
+    let noise = random.random_f64(0.0, 1.0);
     ((val as f64) + noise) / bound as f64
+}
+
+// fn random_vec(random: &mut Random) -> Vec3 {
+//     Vec3::new(random.random_normalized(), random.random_normalized(), random.random_normalized())
+// }
+
+fn random_vec_bounded(random: &mut Random, min: f64, max: f64) -> Vec3 {
+    Vec3::new(random.random_f64(min, max), random.random_f64(min, max), random.random_f64(min, max))
+}
+
+fn random_unit_sphere(random: &mut Random) -> Vec3 {
+    return loop {
+        let vec = random_vec_bounded(random, -1.0, 1.0);
+        if vec.length_squared() < 1.0 {
+            break vec
+        }
+    }
 }
 
 fn main() {
@@ -278,16 +321,18 @@ fn main() {
 
     let sample_scale = 1.0 / (samples_per_pixel as f64);
 
-    let mut rng = rand::thread_rng();
+    let mut random = Random::new();
+
+    let max_depth = 50;
 
     for (x, y, pixel) in image.enumerate_pixels_mut() {
         let mut final_color = ColorVec::ZERO;
 
         for _ in 0..samples_per_pixel {
-            let u = normalize_coord_with_noise(x, image_spec.width, &mut rng);
+            let u = normalize_coord_with_noise(x, image_spec.width, &mut random);
             // Flip top and bottom, as guide's x=0 is bottom, but our's is top.
-            let v = 1.0 - normalize_coord_with_noise(y, image_spec.height, &mut rng);
-            let color = camera.get_ray(u, v).resolve_color(&world);
+            let v = 1.0 - normalize_coord_with_noise(y, image_spec.height, &mut random);
+            let color = camera.get_ray(u, v).resolve_color(&world, &mut random, max_depth);
 
             final_color += color * sample_scale;
         }
