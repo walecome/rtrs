@@ -25,7 +25,13 @@ struct HitRecord<'a> {
 }
 
 impl<'a> HitRecord<'a> {
-    fn new(point: &Point3, outward_normal: &Vec3, ray: &Ray, t: f64, material: &'a dyn Material) -> Self {
+    fn new(
+        point: &Point3,
+        outward_normal: &Vec3,
+        ray: &Ray,
+        t: f64,
+        material: &'a dyn Material,
+    ) -> Self {
         let front_face = ray.direction.dot(*outward_normal) < 0.0;
         let normal = if front_face {
             outward_normal.to_owned()
@@ -104,7 +110,13 @@ impl Hittable for Sphere {
         let point = ray.at(root);
         let outward_normal = (point - self.center) / self.radius;
 
-        return Some(HitRecord::new(&point, &outward_normal, ray, root, self.material.as_ref()));
+        return Some(HitRecord::new(
+            &point,
+            &outward_normal,
+            ray,
+            root,
+            self.material.as_ref(),
+        ));
     }
 }
 
@@ -160,12 +172,7 @@ impl Ray {
     }
 }
 
-fn ray_color(
-    ray: &Ray,
-    hittable: &dyn Hittable,
-    random: &mut Random,
-    depth: u32,
-) -> ColorVec {
+fn ray_color(ray: &Ray, hittable: &dyn Hittable, random: &mut Random, depth: u32) -> ColorVec {
     if depth == 0 {
         return ColorVec::ZERO;
     }
@@ -176,7 +183,8 @@ fn ray_color(
 
     if let Some(hit) = hittable.try_collect_hit_from(ray, &base_threshold) {
         if let Some(scatter) = hit.material.scatter(ray, &hit, random) {
-            return scatter.attenuation * scatter.scattered.resolve_color(hittable, random, depth - 1);
+            return scatter.attenuation
+                * scatter.scattered.resolve_color(hittable, random, depth - 1);
         }
 
         return ColorVec::ZERO;
@@ -263,10 +271,20 @@ impl ImageSpec {
 fn create_world() -> impl Hittable {
     let mut world = HittableList::new();
 
-    let material_ground = Box::new(Lambertian { albedo: ColorVec::new(0.8, 0.8, 0.0) });
-    let material_center = Box::new(Lambertian { albedo: ColorVec::new(0.7, 0.3, 0.3) });
-    let material_left = Box::new(Metal { albedo: ColorVec::new(0.8, 0.8, 0.8) });
-    let material_right = Box::new(Metal { albedo: ColorVec::new(0.8, 0.6, 0.2) });
+    let material_ground = Box::new(Lambertian {
+        albedo: ColorVec::new(0.8, 0.8, 0.0),
+    });
+    let material_center = Box::new(Lambertian {
+        albedo: ColorVec::new(0.7, 0.3, 0.3),
+    });
+    let material_left = Box::new(Metal::new(
+        ColorVec::new(0.8, 0.8, 0.8),
+        0.3,
+    ));
+    let material_right = Box::new(Metal::new(
+        ColorVec::new(0.8, 0.6, 0.2),
+        1.0,
+    ));
 
     world.add(Box::new(Sphere::new(
         &Point3::new(0.0, -100.5, -1.0),
@@ -334,12 +352,10 @@ impl Material for Lambertian {
         if near_zero(&scatter_direction) {
             scatter_direction = hit.normal;
         }
-        return Some(
-            ScatterRecord {
-                attenuation: self.albedo,
-                scattered: Ray::new(&hit.point, &scatter_direction),
-            }
-        );
+        return Some(ScatterRecord {
+            attenuation: self.albedo,
+            scattered: Ray::new(&hit.point, &scatter_direction),
+        });
     }
 }
 
@@ -349,12 +365,25 @@ fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
 
 struct Metal {
     albedo: ColorVec,
+    fuzz: f64,
+}
+
+impl Metal {
+    fn new(albedo: ColorVec, fuzz: f64) -> Metal {
+        Metal {
+            albedo,
+            fuzz: if fuzz < 1.0 { fuzz } else { 1.0 },
+        }
+    }
 }
 
 impl Material for Metal {
-    fn scatter(&self, ray: &Ray, hit: &HitRecord, _random: &mut Random) -> Option<ScatterRecord> {
+    fn scatter(&self, ray: &Ray, hit: &HitRecord, random: &mut Random) -> Option<ScatterRecord> {
         let reflected = reflect(&(ray.direction.normalize()), &hit.normal);
-        let scattered = Ray::new(&hit.point, &reflected);
+        let scattered = Ray::new(
+            &hit.point,
+            &(reflected + self.fuzz * random_in_unit_sphere(random)),
+        );
         return if scattered.direction.dot(hit.normal) < 0.0 {
             None
         } else {
@@ -362,7 +391,7 @@ impl Material for Metal {
                 attenuation: self.albedo,
                 scattered,
             })
-        }
+        };
     }
 }
 
@@ -388,7 +417,7 @@ fn random_in_unit_sphere(random: &mut Random) -> Vec3 {
     };
 }
 
-fn random_unit_vector(random: &mut Random)  -> Vec3 {
+fn random_unit_vector(random: &mut Random) -> Vec3 {
     random_in_unit_sphere(random).normalize()
 }
 
@@ -398,8 +427,8 @@ fn random_in_hemisphere(normal: &Vec3, random: &mut Random) -> Vec3 {
     return if in_unit_sphere.dot(*normal) > 0.0 {
         in_unit_sphere
     } else {
-        return in_unit_sphere.neg()
-    }
+        return in_unit_sphere.neg();
+    };
 }
 
 fn near_zero(vec: &Vec3) -> bool {
@@ -408,11 +437,7 @@ fn near_zero(vec: &Vec3) -> bool {
 }
 
 fn sqrt_vec(vec: &ColorVec) -> ColorVec {
-    ColorVec::new(
-        vec.x.sqrt(),
-        vec.y.sqrt(),
-        vec.z.sqrt(),
-    )
+    ColorVec::new(vec.x.sqrt(), vec.y.sqrt(), vec.z.sqrt())
 }
 
 fn compute_pixel(
