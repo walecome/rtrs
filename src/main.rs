@@ -286,10 +286,6 @@ fn normalize_coord_with_noise(val: u32, bound: u32, random: &mut Random) -> f64 
     ((val as f64) + noise) / bound as f64
 }
 
-// fn random_vec(random: &mut Random) -> Vec3 {
-//     Vec3::new(random.random_normalized(), random.random_normalized(), random.random_normalized())
-// }
-
 fn random_vec_bounded(random: &mut Random, min: f64, max: f64) -> Vec3 {
     Vec3::new(
         random.random_f64(min, max),
