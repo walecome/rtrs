@@ -20,7 +20,7 @@ struct HitRecord<'a> {
     point: Point3,
     normal: Vec3,
     t: f64,
-    // front_face: bool,
+    front_face: bool,
     material: &'a dyn Material,
 }
 
@@ -43,7 +43,7 @@ impl<'a> HitRecord<'a> {
             point: *point,
             normal,
             t,
-            // front_face,
+            front_face,
             material,
         }
     }
@@ -275,16 +275,12 @@ fn create_world() -> impl Hittable {
         albedo: ColorVec::new(0.8, 0.8, 0.0),
     });
     let material_center = Box::new(Lambertian {
-        albedo: ColorVec::new(0.7, 0.3, 0.3),
+        albedo: ColorVec::new(0.1, 0.2, 0.5),
     });
-    let material_left = Box::new(Metal::new(
-        ColorVec::new(0.8, 0.8, 0.8),
-        0.3,
-    ));
-    let material_right = Box::new(Metal::new(
-        ColorVec::new(0.8, 0.6, 0.2),
-        1.0,
-    ));
+    let material_left = Box::new(Dialectric {
+        ir: 1.5,
+    });
+    let material_right = Box::new(Metal::new(ColorVec::new(0.8, 0.6, 0.2), 0.0));
 
     world.add(Box::new(Sphere::new(
         &Point3::new(0.0, -100.5, -1.0),
@@ -363,6 +359,45 @@ fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
     return *v - 2.0 * v.dot(*n) * *n;
 }
 
+fn refract(uv: &Vec3, n: &Vec3, etai_over_etat: f64) -> Vec3 {
+    let cos_theta = uv.neg().dot(*n).min(1.0);
+    let r_out_perp = etai_over_etat * (*uv + cos_theta * (*n));
+
+    let r_out_parallell = (1.0 - r_out_perp.length_squared()).abs().sqrt().neg() * *n;
+    return r_out_perp + r_out_parallell;
+}
+
+struct Dialectric {
+    ir: f64,
+}
+
+impl Material for Dialectric {
+    fn scatter(&self, ray: &Ray, hit: &HitRecord, _random: &mut Random) -> Option<ScatterRecord> {
+        let refraction_ratio = if hit.front_face { 1.0 / self.ir } else { self.ir };
+        let unit_direction = ray.direction.normalize();
+
+        let cos_theta = unit_direction.neg().dot(hit.normal).min(1.0);
+        let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
+
+        let cannot_refract = refraction_ratio * sin_theta > 1.0;
+
+        let direction = if cannot_refract {
+            reflect(&unit_direction, &hit.normal)
+        } else {
+            refract(&unit_direction, &hit.normal, refraction_ratio)
+        };
+
+
+        return Some(ScatterRecord {
+            attenuation: ColorVec::ONE,
+            scattered: Ray::new(&hit.point, &direction),
+        })
+
+    }
+}
+
+
+
 struct Metal {
     albedo: ColorVec,
     fuzz: f64,
@@ -372,7 +407,7 @@ impl Metal {
     fn new(albedo: ColorVec, fuzz: f64) -> Metal {
         Metal {
             albedo,
-            fuzz: if fuzz < 1.0 { fuzz } else { 1.0 },
+            fuzz: fuzz.min(1.0),
         }
     }
 }
