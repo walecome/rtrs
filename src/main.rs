@@ -303,6 +303,14 @@ fn random_in_unit_sphere(random: &mut Random) -> Vec3 {
     };
 }
 
+fn sqrt_vec(vec: &ColorVec) -> ColorVec {
+    ColorVec::new(
+        vec.x.sqrt(),
+        vec.y.sqrt(),
+        vec.z.sqrt(),
+    )
+}
+
 fn compute_pixel(
     x: u32,
     y: u32,
@@ -327,7 +335,9 @@ fn compute_pixel(
     }
 
     let sample_scale = 1.0 / (samples_per_pixel as f64);
-    return final_color * sample_scale;
+    let sample_adjusted_color = final_color * sample_scale;
+    let gamma_corrected_color = sqrt_vec(&sample_adjusted_color);
+    return gamma_corrected_color;
 }
 
 fn main() {
