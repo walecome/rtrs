@@ -167,7 +167,7 @@ fn ray_color(ray: &Ray, hittable: &dyn Hittable, random: &mut Random, depth: u32
 
     if let Some(hit) = hittable.try_collect_hit_from(ray, &base_threshold) {
         // TODO: Something is off, our image gets a lot darker than the reference one...
-        let target = hit.point + hit.normal + random_unit_sphere(random);
+        let target = hit.point + hit.normal + random_in_unit_sphere(random);
         let new_ray = Ray::new(&hit.point, &(target - hit.point));
         return 0.5 * ray_color(&new_ray, hittable, random, depth - 1);
     }
@@ -298,7 +298,7 @@ fn random_vec_bounded(random: &mut Random, min: f64, max: f64) -> Vec3 {
     )
 }
 
-fn random_unit_sphere(random: &mut Random) -> Vec3 {
+fn random_in_unit_sphere(random: &mut Random) -> Vec3 {
     return loop {
         let vec = random_vec_bounded(random, -1.0, 1.0);
         if vec.length_squared() < 1.0 {
