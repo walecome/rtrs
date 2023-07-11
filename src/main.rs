@@ -317,7 +317,6 @@ fn compute_pixel(
     max_depth: u32,
 ) -> ColorVec {
     let mut final_color = ColorVec::ZERO;
-    let sample_scale = 1.0 / (samples_per_pixel as f64);
     let mut random = Random::new();
 
     for _ in 0..samples_per_pixel {
@@ -328,10 +327,11 @@ fn compute_pixel(
             .get_ray(u, v)
             .resolve_color(world, &mut random, max_depth);
 
-        final_color += color * sample_scale;
+        final_color += color;
     }
 
-    return final_color;
+    let sample_scale = 1.0 / (samples_per_pixel as f64);
+    return final_color * sample_scale;
 }
 
 fn main() {
