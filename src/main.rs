@@ -72,10 +72,6 @@ impl Sphere {
             radius,
         }
     }
-
-    fn box_area(&self) -> f64 {
-        self.radius * self.radius
-    }
 }
 
 impl Hittable for Sphere {
@@ -83,7 +79,7 @@ impl Hittable for Sphere {
         let oc = ray.origin - self.center;
         let a = ray.direction.length_squared();
         let half_b = oc.dot(ray.direction);
-        let c = oc.length_squared() - self.box_area();
+        let c = oc.length_squared() - self.radius * self.radius;
         let discriminant = half_b * half_b - a * c;
 
         if discriminant < 0.0 {
