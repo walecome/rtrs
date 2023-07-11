@@ -178,10 +178,7 @@ fn ray_color(ray: &Ray, hittable: &dyn Hittable, random: &mut Random, depth: u32
 }
 
 fn double_to_color(val: f64) -> u8 {
-    assert!(val >= 0.0);
-    let scaled: u32 = (val * 255.999) as u32;
-    assert!(scaled < 256, "scaled={}, val={}", scaled, val);
-    return scaled as u8;
+    (256 as f64 * val.clamp(0.0, 0.99)) as u8
 }
 
 fn vec_to_image_color(color_vec: &ColorVec) -> Color {
