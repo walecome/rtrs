@@ -16,15 +16,16 @@ type ColorVec = DVec3;
 type Vec3 = DVec3;
 type Point3 = DVec3;
 
-struct HitRecord {
+struct HitRecord<'a> {
     point: Point3,
     normal: Vec3,
     t: f64,
     // front_face: bool,
+    material: &'a dyn Material,
 }
 
-impl HitRecord {
-    fn new(point: &Point3, outward_normal: &Vec3, ray: &Ray, t: f64) -> HitRecord {
+impl<'a> HitRecord<'a> {
+    fn new(point: &Point3, outward_normal: &Vec3, ray: &Ray, t: f64, material: &'a dyn Material) -> Self {
         let front_face = ray.direction.dot(*outward_normal) < 0.0;
         let normal = if front_face {
             outward_normal.to_owned()
@@ -37,6 +38,7 @@ impl HitRecord {
             normal,
             t,
             // front_face,
+            material,
         }
     }
 }
@@ -63,13 +65,15 @@ trait Hittable {
 struct Sphere {
     center: Point3,
     radius: f64,
+    material: Box<dyn Material + Sync>,
 }
 
 impl Sphere {
-    fn new(center: &Point3, radius: f64) -> Sphere {
+    fn new(center: &Point3, radius: f64, material: Box<dyn Material + Sync>) -> Sphere {
         Sphere {
             center: *center,
             radius,
+            material,
         }
     }
 }
@@ -100,7 +104,7 @@ impl Hittable for Sphere {
         let point = ray.at(root);
         let outward_normal = (point - self.center) / self.radius;
 
-        return Some(HitRecord::new(&point, &outward_normal, ray, root));
+        return Some(HitRecord::new(&point, &outward_normal, ray, root, self.material.as_ref()));
     }
 }
 
@@ -151,21 +155,15 @@ impl Ray {
         self.origin + t * self.direction
     }
 
-    fn resolve_color(&self, hittable: &dyn Hittable, random: &mut Random, diffuse_method: &DiffuseMethod, depth: u32) -> ColorVec {
-        ray_color(self, hittable, random, diffuse_method, depth)
+    fn resolve_color(&self, hittable: &dyn Hittable, random: &mut Random, depth: u32) -> ColorVec {
+        ray_color(self, hittable, random, depth)
     }
-}
-
-enum DiffuseMethod {
-    Hemispherical,
-    Lambertian,
 }
 
 fn ray_color(
     ray: &Ray,
     hittable: &dyn Hittable,
     random: &mut Random,
-    diffuse_method: &DiffuseMethod,
     depth: u32,
 ) -> ColorVec {
     if depth == 0 {
@@ -177,13 +175,11 @@ fn ray_color(
     };
 
     if let Some(hit) = hittable.try_collect_hit_from(ray, &base_threshold) {
-        let diffuse_vec = match diffuse_method {
-            DiffuseMethod::Hemispherical => random_in_hemisphere(&hit.normal, random),
-            DiffuseMethod::Lambertian => random_unit_vector(random),
-        };
-        let target = hit.point + hit.normal + diffuse_vec;
-        let new_ray = Ray::new(&hit.point, &(target - hit.point));
-        return 0.5 * ray_color(&new_ray, hittable, random, diffuse_method, depth - 1);
+        if let Some(scatter) = hit.material.scatter(ray, &hit, random) {
+            return scatter.attenuation * scatter.scattered.resolve_color(hittable, random, depth - 1);
+        }
+
+        return ColorVec::ZERO;
     }
 
     let unit_direction = ray.direction.normalize();
@@ -266,10 +262,34 @@ impl ImageSpec {
 
 fn create_world() -> impl Hittable {
     let mut world = HittableList::new();
-    world.add(Box::new(Sphere::new(&Point3::new(0.0, 0.0, -1.0), 0.5)));
+
+    let material_ground = Box::new(Lambertian { albedo: ColorVec::new(0.8, 0.8, 0.0) });
+    let material_center = Box::new(Lambertian { albedo: ColorVec::new(0.7, 0.3, 0.3) });
+    let material_left = Box::new(Metal { albedo: ColorVec::new(0.8, 0.8, 0.8) });
+    let material_right = Box::new(Metal { albedo: ColorVec::new(0.8, 0.6, 0.2) });
+
     world.add(Box::new(Sphere::new(
         &Point3::new(0.0, -100.5, -1.0),
         100.0,
+        material_ground,
+    )));
+
+    world.add(Box::new(Sphere::new(
+        &Point3::new(0.0, 0.0, -1.0),
+        0.5,
+        material_center,
+    )));
+
+    world.add(Box::new(Sphere::new(
+        &Point3::new(-1.0, 0.0, -1.0),
+        0.5,
+        material_left,
+    )));
+
+    world.add(Box::new(Sphere::new(
+        &Point3::new(1.0, 0.0, -1.0),
+        0.5,
+        material_right,
     )));
 
     return world;
@@ -292,6 +312,57 @@ impl Random {
 
     fn random_f64(&mut self, min: f64, max: f64) -> f64 {
         min + (max - min) * self.random_normalized()
+    }
+}
+
+struct ScatterRecord {
+    attenuation: ColorVec,
+    scattered: Ray,
+}
+
+trait Material {
+    fn scatter(&self, ray: &Ray, hit: &HitRecord, random: &mut Random) -> Option<ScatterRecord>;
+}
+
+struct Lambertian {
+    albedo: ColorVec,
+}
+
+impl Material for Lambertian {
+    fn scatter(&self, _ray: &Ray, hit: &HitRecord, random: &mut Random) -> Option<ScatterRecord> {
+        let mut scatter_direction = hit.normal + random_unit_vector(random);
+        if near_zero(&scatter_direction) {
+            scatter_direction = hit.normal;
+        }
+        return Some(
+            ScatterRecord {
+                attenuation: self.albedo,
+                scattered: Ray::new(&hit.point, &scatter_direction),
+            }
+        );
+    }
+}
+
+fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
+    return *v - 2.0 * v.dot(*n) * *n;
+}
+
+struct Metal {
+    albedo: ColorVec,
+}
+
+impl Material for Metal {
+    fn scatter(&self, ray: &Ray, hit: &HitRecord, _random: &mut Random) -> Option<ScatterRecord> {
+        let reflected = reflect(&(ray.direction.normalize()), &hit.normal);
+        let scattered = Ray::new(&hit.point, &reflected);
+        return if scattered.direction.dot(hit.normal) < 0.0 {
+            None
+        } else {
+            Some(ScatterRecord {
+                attenuation: self.albedo,
+                scattered,
+            })
+        }
     }
 }
 
@@ -331,6 +402,11 @@ fn random_in_hemisphere(normal: &Vec3, random: &mut Random) -> Vec3 {
     }
 }
 
+fn near_zero(vec: &Vec3) -> bool {
+    let s = 1e-8;
+    return vec.abs().max_element() < s;
+}
+
 fn sqrt_vec(vec: &ColorVec) -> ColorVec {
     ColorVec::new(
         vec.x.sqrt(),
@@ -346,7 +422,6 @@ fn compute_pixel(
     image_spec: &ImageSpec,
     camera: &Camera,
     world: &dyn Hittable,
-    diffuse_method: &DiffuseMethod,
     max_depth: u32,
 ) -> ColorVec {
     let mut final_color = ColorVec::ZERO;
@@ -358,7 +433,7 @@ fn compute_pixel(
         let v = 1.0 - normalize_coord_with_noise(y, image_spec.height, &mut random);
         let color = camera
             .get_ray(u, v)
-            .resolve_color(world, &mut random, diffuse_method, max_depth);
+            .resolve_color(world, &mut random, max_depth);
 
         final_color += color;
     }
@@ -377,7 +452,6 @@ fn main() {
     let camera = Camera::new(image_spec.aspect_ratio);
 
     let max_depth = 50;
-    let diffuse_method = DiffuseMethod::Lambertian;
 
     let result = (0..image_spec.pixel_count())
         .into_par_iter()
@@ -392,7 +466,6 @@ fn main() {
                 &image_spec,
                 &camera,
                 &world,
-                &diffuse_method,
                 max_depth,
             );
             (x, y, vec_to_image_color(&color_vec))
