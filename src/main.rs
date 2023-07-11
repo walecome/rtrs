@@ -151,12 +151,23 @@ impl Ray {
         self.origin + t * self.direction
     }
 
-    fn resolve_color(&self, hittable: &dyn Hittable, random: &mut Random, depth: u32) -> ColorVec {
-        ray_color(self, hittable, random, depth)
+    fn resolve_color(&self, hittable: &dyn Hittable, random: &mut Random, diffuse_method: &DiffuseMethod, depth: u32) -> ColorVec {
+        ray_color(self, hittable, random, diffuse_method, depth)
     }
 }
 
-fn ray_color(ray: &Ray, hittable: &dyn Hittable, random: &mut Random, depth: u32) -> ColorVec {
+enum DiffuseMethod {
+    Hemispherical,
+    Lambertian,
+}
+
+fn ray_color(
+    ray: &Ray,
+    hittable: &dyn Hittable,
+    random: &mut Random,
+    diffuse_method: &DiffuseMethod,
+    depth: u32,
+) -> ColorVec {
     if depth == 0 {
         return ColorVec::ZERO;
     }
@@ -166,9 +177,13 @@ fn ray_color(ray: &Ray, hittable: &dyn Hittable, random: &mut Random, depth: u32
     };
 
     if let Some(hit) = hittable.try_collect_hit_from(ray, &base_threshold) {
-        let target = hit.point + hit.normal + random_in_unit_sphere(random);
+        let diffuse_vec = match diffuse_method {
+            DiffuseMethod::Hemispherical => random_in_hemisphere(&hit.normal, random),
+            DiffuseMethod::Lambertian => random_unit_vector(random),
+        };
+        let target = hit.point + hit.normal + diffuse_vec;
         let new_ray = Ray::new(&hit.point, &(target - hit.point));
-        return 0.5 * ray_color(&new_ray, hittable, random, depth - 1);
+        return 0.5 * ray_color(&new_ray, hittable, random, diffuse_method, depth - 1);
     }
 
     let unit_direction = ray.direction.normalize();
@@ -302,6 +317,20 @@ fn random_in_unit_sphere(random: &mut Random) -> Vec3 {
     };
 }
 
+fn random_unit_vector(random: &mut Random)  -> Vec3 {
+    random_in_unit_sphere(random).normalize()
+}
+
+fn random_in_hemisphere(normal: &Vec3, random: &mut Random) -> Vec3 {
+    let in_unit_sphere = random_in_unit_sphere(random);
+    // In the same hemisphere as the normal
+    return if in_unit_sphere.dot(*normal) > 0.0 {
+        in_unit_sphere
+    } else {
+        return in_unit_sphere.neg()
+    }
+}
+
 fn sqrt_vec(vec: &ColorVec) -> ColorVec {
     ColorVec::new(
         vec.x.sqrt(),
@@ -317,6 +346,7 @@ fn compute_pixel(
     image_spec: &ImageSpec,
     camera: &Camera,
     world: &dyn Hittable,
+    diffuse_method: &DiffuseMethod,
     max_depth: u32,
 ) -> ColorVec {
     let mut final_color = ColorVec::ZERO;
@@ -328,7 +358,7 @@ fn compute_pixel(
         let v = 1.0 - normalize_coord_with_noise(y, image_spec.height, &mut random);
         let color = camera
             .get_ray(u, v)
-            .resolve_color(world, &mut random, max_depth);
+            .resolve_color(world, &mut random, diffuse_method, max_depth);
 
         final_color += color;
     }
@@ -347,6 +377,7 @@ fn main() {
     let camera = Camera::new(image_spec.aspect_ratio);
 
     let max_depth = 50;
+    let diffuse_method = DiffuseMethod::Lambertian;
 
     let result = (0..image_spec.pixel_count())
         .into_par_iter()
@@ -361,6 +392,7 @@ fn main() {
                 &image_spec,
                 &camera,
                 &world,
+                &diffuse_method,
                 max_depth,
             );
             (x, y, vec_to_image_color(&color_vec))
