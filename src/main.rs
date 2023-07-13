@@ -277,9 +277,9 @@ fn create_world() -> impl Hittable {
     let material_center = Box::new(Lambertian {
         albedo: ColorVec::new(0.1, 0.2, 0.5),
     });
-    let material_left = Box::new(Dialectric {
-        ir: 1.5,
-    });
+    let material_left = Box::new(Dialectric { ir: 1.5 });
+    // TODO: The Hittable should probably not own the Material...
+    let material_left_2 = Box::new(Dialectric { ir: 1.5 });
     let material_right = Box::new(Metal::new(ColorVec::new(0.8, 0.6, 0.2), 0.0));
 
     world.add(Box::new(Sphere::new(
@@ -298,6 +298,12 @@ fn create_world() -> impl Hittable {
         &Point3::new(-1.0, 0.0, -1.0),
         0.5,
         material_left,
+    )));
+
+    world.add(Box::new(Sphere::new(
+        &Point3::new(-1.0, 0.0, -1.0),
+        -0.4,
+        material_left_2,
     )));
 
     world.add(Box::new(Sphere::new(
@@ -371,9 +377,20 @@ struct Dialectric {
     ir: f64,
 }
 
+fn reflectance(cosine: f64, ref_idx: f64) -> f64 {
+    // Use Schlick's approximation for reflectance.
+    let r0 = (1.0 - ref_idx) / (1.0 + ref_idx);
+    let r0_sqared = r0 * r0;
+    return r0_sqared + (1.0 - r0_sqared) * (1.0 - cosine).powi(5);
+}
+
 impl Material for Dialectric {
-    fn scatter(&self, ray: &Ray, hit: &HitRecord, _random: &mut Random) -> Option<ScatterRecord> {
-        let refraction_ratio = if hit.front_face { 1.0 / self.ir } else { self.ir };
+    fn scatter(&self, ray: &Ray, hit: &HitRecord, random: &mut Random) -> Option<ScatterRecord> {
+        let refraction_ratio = if hit.front_face {
+            1.0 / self.ir
+        } else {
+            self.ir
+        };
         let unit_direction = ray.direction.normalize();
 
         let cos_theta = unit_direction.neg().dot(hit.normal).min(1.0);
@@ -381,22 +398,20 @@ impl Material for Dialectric {
 
         let cannot_refract = refraction_ratio * sin_theta > 1.0;
 
-        let direction = if cannot_refract {
+        let direction = if cannot_refract
+            || reflectance(cos_theta, refraction_ratio) > random.random_f64(0.0, 1.0)
+        {
             reflect(&unit_direction, &hit.normal)
         } else {
             refract(&unit_direction, &hit.normal, refraction_ratio)
         };
 
-
         return Some(ScatterRecord {
             attenuation: ColorVec::ONE,
             scattered: Ray::new(&hit.point, &direction),
-        })
-
+        });
     }
 }
-
-
 
 struct Metal {
     albedo: ColorVec,
