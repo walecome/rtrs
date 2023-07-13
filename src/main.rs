@@ -558,8 +558,8 @@ fn main() {
     let image_spec = ImageSpec::from_aspect_ratio(400, 16.0 / 9.0);
     let samples_per_pixel = 100;
 
-    let world = create_world_2();
     let camera = Camera::new(90.0, image_spec.aspect_ratio);
+    let world = create_world();
 
     let max_depth = 50;
 
