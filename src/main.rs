@@ -364,6 +364,79 @@ fn create_world() -> impl Hittable {
     return world;
 }
 
+fn random_world(random: &mut Random) -> impl Hittable {
+    let mut world = HittableList::new();
+
+    let material_ground = Box::new(Lambertian {
+        albedo: (0.5, 0.5, 0.5).into(),
+    });
+    world.add(Box::new(Sphere::new(&(0.0, -1000.0, 0.0).into(), 1000.0, material_ground)));
+
+    for a in -11..11 {
+        for b in -11..11 {
+            let choose_mat = random.f();
+            let center = Point3::new(a as f64 + 0.9 * random.f(), 0.2, b as f64 + 0.9 * random.f());
+
+            if (center - Point3::new(4.0, 0.2, 0.0)).length() <= 0.9 {
+                continue;
+            }
+
+            enum Type {
+                Diffuse,
+                Metal,
+                Glass,
+            }
+
+            let object_type = if choose_mat < 0.8 {
+                Type::Diffuse
+            } else if choose_mat < 0.95 {
+                Type::Metal
+            } else {
+                Type::Glass
+            };
+
+            let material: Box<dyn Material + Sync> = match object_type {
+                Type::Diffuse => {
+                    Box::new(Lambertian {
+                        albedo: random_color(random) * random_color(random),
+                    })
+                },
+                Type::Metal => {
+                    Box::new(Metal {
+                        albedo: random_vec_bounded(random, 0.5, 1.0),
+                        fuzz: random.random_f64(0.0, 0.5),
+                    })
+                },
+                Type::Glass => {
+                    Box::new(Dialectric {
+                        ir: 1.5,
+                    })
+                },
+            };
+
+            world.add(Box::new(Sphere::new(&center, 0.2, material)));
+        }
+    }
+
+    let material1 = Box::new(Dialectric {
+        ir: 1.5,
+    });
+    world.add(Box::new(Sphere::new(&(0.0, 1.0, 0.0).into(), 1.0, material1)));
+
+    let material2 = Box::new(Lambertian {
+        albedo: ColorVec::new(0.4, 0.2, 0.1),
+    });
+    world.add(Box::new(Sphere::new(&(-4.0, 1.0, 0.0).into(), 1.0, material2)));
+
+    let material3 = Box::new(Metal {
+        albedo: ColorVec::new(0.7, 0.6, 0.5),
+        fuzz: 0.0,
+    });
+    world.add(Box::new(Sphere::new(&(4.0, 1.0, 0.0).into(), 1.0, material3)));
+
+    return world;
+}
+
 struct Random {
     rng: SmallRng,
 }
@@ -381,6 +454,10 @@ impl Random {
 
     fn random_f64(&mut self, min: f64, max: f64) -> f64 {
         min + (max - min) * self.random_normalized()
+    }
+
+    fn f(&mut self) -> f64 {
+        self.random_f64(0.0, 1.0)
     }
 }
 
@@ -507,6 +584,10 @@ fn random_vec_bounded(random: &mut Random, min: f64, max: f64) -> Vec3 {
     )
 }
 
+fn random_color(random: &mut Random) -> ColorVec {
+    random_vec_bounded(random, 0.0, 1.0)
+}
+
 fn random_in_unit_sphere(random: &mut Random) -> Vec3 {
     return loop {
         let vec = random_vec_bounded(random, -1.0, 1.0);
@@ -578,14 +659,14 @@ fn compute_pixel(
 }
 
 fn main() {
-    let image_spec = ImageSpec::from_aspect_ratio(400, 16.0 / 9.0);
-    let samples_per_pixel = 100;
+    let image_spec = ImageSpec::from_aspect_ratio(1200, 3.0 / 2.0);
+    let samples_per_pixel = 500;
 
-    let look_from = Point3::new(3.0, 3.0, 2.0);
-    let look_to = Point3::new(0.0, 0.0, -1.0);
+    let look_from = Point3::new(13.0, 2.0, 3.0);
+    let look_to = Point3::new(0.0, 0.0, 0.0);
     let vup = Point3::new(0.0, 1.0, 0.0);
-    let dist_to_focus = (look_from - look_to).length();
-    let aperture = 0.5;
+    let dist_to_focus = 10.0;
+    let aperture = 0.1;
 
     let camera = Camera::new(
         look_from,
@@ -596,7 +677,8 @@ fn main() {
         aperture,
         dist_to_focus,
     );
-    let world = create_world();
+    let mut random = Random::new();
+    let world = random_world(&mut random);
 
     let max_depth = 50;
 
