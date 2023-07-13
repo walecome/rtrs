@@ -1,5 +1,5 @@
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use std::boxed::Box;
+use std::{boxed::Box, f64::consts::PI};
 use std::ops::Neg;
 
 use glam::DVec3;
@@ -207,6 +207,10 @@ fn vec_to_image_color(color_vec: &ColorVec) -> Color {
     )
 }
 
+fn degrees_to_radians(degrees: f64) -> f64 {
+    return degrees * PI / 180.0;
+}
+
 struct Camera {
     // aspect_ratio: f64,
     // viewport_height: f64,
@@ -219,10 +223,14 @@ struct Camera {
 }
 
 impl Camera {
-    fn new(aspect_ratio: f64) -> Camera {
-        let viewport_height = 2.0;
+    fn new(vertical_fov: f64, aspect_ratio: f64) -> Camera {
+        let theta = degrees_to_radians(vertical_fov);
+        let h = (theta / 2.0).tan();
+
+        let viewport_height = 2.0 * h;
         let viewport_width = aspect_ratio * viewport_height;
         let focal_length = 1.0;
+
         let origin = Point3::new(0.0, 0.0, 0.0);
         let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
         let vertical = Vec3::new(0.0, viewport_height, 0.0);
@@ -266,6 +274,33 @@ impl ImageSpec {
     fn pixel_count(&self) -> u32 {
         self.width * self.height
     }
+}
+
+fn create_world_2() -> impl Hittable {
+    let mut world = HittableList::new();
+
+    let material_left = Box::new(Lambertian {
+        albedo: ColorVec::new(0.0, 0.0, 1.0),
+    });
+    let material_right = Box::new(Lambertian {
+        albedo: ColorVec::new(1.0, 0.0, 0.0),
+    });
+
+    let R = (PI / 4.0).cos();
+
+    world.add(Box::new(Sphere::new(
+        &Point3::new(-R, 0.0, -1.0),
+        R,
+        material_left,
+    )));
+
+    world.add(Box::new(Sphere::new(
+        &Point3::new(R, 0.0, -1.0),
+        R,
+        material_right,
+    )));
+
+    return world;
 }
 
 fn create_world() -> impl Hittable {
@@ -523,8 +558,8 @@ fn main() {
     let image_spec = ImageSpec::from_aspect_ratio(400, 16.0 / 9.0);
     let samples_per_pixel = 100;
 
-    let world = create_world();
-    let camera = Camera::new(image_spec.aspect_ratio);
+    let world = create_world_2();
+    let camera = Camera::new(90.0, image_spec.aspect_ratio);
 
     let max_depth = 50;
 
