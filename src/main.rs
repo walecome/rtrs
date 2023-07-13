@@ -216,6 +216,10 @@ struct Camera {
     horizontal: Vec3,
     vertical: Vec3,
     lower_left_corner: Vec3,
+    w: Vec3,
+    u: Vec3,
+    v: Vec3,
+    lens_radius: f64,
 }
 
 impl Camera {
@@ -225,6 +229,8 @@ impl Camera {
         vup: Vec3,
         vertical_fov: f64,
         aspect_ratio: f64,
+        aperture: f64,
+        focus_dist: f64
     ) -> Camera {
         let theta = degrees_to_radians(vertical_fov);
         let h = (theta / 2.0).tan();
@@ -237,21 +243,29 @@ impl Camera {
         let v = w.cross(u);
 
         let origin = look_from;
-        let horizontal = viewport_width * u;
-        let vertical = viewport_height * v;
-        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - w;
+        let horizontal = focus_dist * viewport_width * u;
+        let vertical = focus_dist * viewport_height * v;
+        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - focus_dist * w;
+        let lens_radius = aperture / 2.0;
         Camera {
             origin,
             horizontal,
             vertical,
             lower_left_corner,
+            w,
+            u,
+            v,
+            lens_radius,
         }
     }
 
-    fn get_ray(&self, s: f64, t: f64) -> Ray {
+    fn get_ray(&self, s: f64, t: f64, random: &mut Random) -> Ray {
+        let rd = self.lens_radius * random_in_unit_disk(random);
+        let offset = self.u * rd.x + self.v * rd.y;
+
         let direction: Vec3 =
-            self.lower_left_corner + s * self.horizontal + t * self.vertical - self.origin;
-        Ray::new(&self.origin, &direction)
+            self.lower_left_corner + s * self.horizontal + t * self.vertical - self.origin - offset;
+        Ray::new(&(self.origin + offset), &direction)
     }
 }
 
@@ -516,6 +530,15 @@ fn random_in_hemisphere(normal: &Vec3, random: &mut Random) -> Vec3 {
     };
 }
 
+fn random_in_unit_disk(random: &mut Random) -> Vec3 {
+    return loop {
+        let p = Vec3::new(random.random_f64(-1.0, 1.0), random.random_f64(-1.0, 1.0), 0.0);
+        if p.length_squared() < 1.0 {
+            break p;
+        }
+    }
+}
+
 fn near_zero(vec: &Vec3) -> bool {
     let s = 1e-8;
     return vec.abs().max_element() < s;
@@ -542,7 +565,7 @@ fn compute_pixel(
         // Flip top and bottom, as guide's x=0 is bottom, but our's is top.
         let v = 1.0 - normalize_coord_with_noise(y, image_spec.height, &mut random);
         let color = camera
-            .get_ray(u, v)
+            .get_ray(u, v, &mut random)
             .resolve_color(world, &mut random, max_depth);
 
         final_color += color;
@@ -558,12 +581,20 @@ fn main() {
     let image_spec = ImageSpec::from_aspect_ratio(400, 16.0 / 9.0);
     let samples_per_pixel = 100;
 
+    let look_from = Point3::new(3.0, 3.0, 2.0);
+    let look_to = Point3::new(0.0, 0.0, -1.0);
+    let vup = Point3::new(0.0, 1.0, 0.0);
+    let dist_to_focus = (look_from - look_to).length();
+    let aperture = 0.5;
+
     let camera = Camera::new(
-        Point3::new(-2.0, 2.0, 1.0),
-        Point3::new(0.0, 0.0, -1.0),
-        Point3::new(0.0, 1.0, 0.0),
+        look_from,
+        look_to,
+        vup,
         20.0,
         image_spec.aspect_ratio,
+        aperture,
+        dist_to_focus,
     );
     let world = create_world();
 
