@@ -219,19 +219,27 @@ struct Camera {
 }
 
 impl Camera {
-    fn new(vertical_fov: f64, aspect_ratio: f64) -> Camera {
+    fn new(
+        look_from: Point3,
+        look_to: Point3,
+        vup: Vec3,
+        vertical_fov: f64,
+        aspect_ratio: f64,
+    ) -> Camera {
         let theta = degrees_to_radians(vertical_fov);
         let h = (theta / 2.0).tan();
 
         let viewport_height = 2.0 * h;
         let viewport_width = aspect_ratio * viewport_height;
-        let focal_length = 1.0;
 
-        let origin = Point3::new(0.0, 0.0, 0.0);
-        let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
-        let vertical = Vec3::new(0.0, viewport_height, 0.0);
-        let lower_left_corner =
-            origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
+        let w = (look_from - look_to).normalize();
+        let u = vup.cross(w).normalize();
+        let v = w.cross(u);
+
+        let origin = look_from;
+        let horizontal = viewport_width * u;
+        let vertical = viewport_height * v;
+        let lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 - w;
         Camera {
             origin,
             horizontal,
@@ -550,7 +558,13 @@ fn main() {
     let image_spec = ImageSpec::from_aspect_ratio(400, 16.0 / 9.0);
     let samples_per_pixel = 100;
 
-    let camera = Camera::new(90.0, image_spec.aspect_ratio);
+    let camera = Camera::new(
+        Point3::new(-2.0, 2.0, 1.0),
+        Point3::new(0.0, 0.0, -1.0),
+        Point3::new(0.0, 1.0, 0.0),
+        20.0,
+        image_spec.aspect_ratio,
+    );
     let world = create_world();
 
     let max_depth = 50;
