@@ -240,9 +240,9 @@ impl Camera {
         }
     }
 
-    fn get_ray(&self, u: f64, v: f64) -> Ray {
+    fn get_ray(&self, s: f64, t: f64) -> Ray {
         let direction: Vec3 =
-            self.lower_left_corner + u * self.horizontal + v * self.vertical - self.origin;
+            self.lower_left_corner + s * self.horizontal + t * self.vertical - self.origin;
         Ray::new(&self.origin, &direction)
     }
 }
