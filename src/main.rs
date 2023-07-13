@@ -212,10 +212,6 @@ fn degrees_to_radians(degrees: f64) -> f64 {
 }
 
 struct Camera {
-    // aspect_ratio: f64,
-    // viewport_height: f64,
-    // viewport_width: f64,
-    // focal_length: f64,
     origin: Point3,
     horizontal: Vec3,
     vertical: Vec3,
@@ -237,10 +233,6 @@ impl Camera {
         let lower_left_corner =
             origin - horizontal / 2.0 - vertical / 2.0 - Vec3::new(0.0, 0.0, focal_length);
         Camera {
-            // aspect_ratio,
-            // viewport_height,
-            // viewport_width,
-            // focal_length,
             origin,
             horizontal,
             vertical,
