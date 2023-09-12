@@ -7,6 +7,8 @@ use image::{ImageBuffer, Rgb, RgbImage};
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::*;
 
+use clap::Parser;
+
 fn rgb(r: u8, g: u8, b: u8) -> Rgb<u8> {
     Rgb([r, g, b])
 }
@@ -658,9 +660,18 @@ fn compute_pixel(
     return gamma_corrected_color;
 }
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long, default_value_t = 500)]
+    samples_per_pixel: u32,
+    #[arg(long, default_value_t = 50)]
+    max_depth: u32,
+}
+
 fn main() {
+    let args = Args::parse();
     let image_spec = ImageSpec::from_aspect_ratio(1200, 3.0 / 2.0);
-    let samples_per_pixel = 500;
+    let samples_per_pixel = args.samples_per_pixel;
 
     let look_from = Point3::new(13.0, 2.0, 3.0);
     let look_to = Point3::new(0.0, 0.0, 0.0);
@@ -680,7 +691,7 @@ fn main() {
     let mut random = Random::new();
     let world = random_world(&mut random);
 
-    let max_depth = 50;
+    let max_depth = args.max_depth;
 
     let result = (0..image_spec.pixel_count())
         .into_par_iter()
